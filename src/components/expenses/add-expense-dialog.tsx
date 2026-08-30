@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
 import { useCreateExpense } from "@/lib/queries";
 import { api } from "@/lib/api";
 import { handleApiError } from "@/lib/errorHandler";
-import { SETTLEMENT_ASSETS, STABLE_ASSET } from "@/lib/constants";
+import { SETTLEMENT_ASSETS } from "@/lib/constants";
+import { AssetSelector } from "@/components/expenses/AssetSelector";
 import type { GroupMember, SplitType, ExpenseShareInput } from "@/lib/types";
 import {
   AMOUNT_DECIMAL_PLACES,
@@ -411,27 +412,18 @@ export function AddExpenseDialog({
           </div>
           <div>
             <Label htmlFor="e-asset">Asset</Label>
-            <Select
+            <AssetSelector
               id="e-asset"
               value={assetKey}
-              onChange={(e) => setAssetKey(e.target.value)}
+              onChange={(code) => setAssetKey(code)}
               onBlur={() => markTouched("assetCode")}
-              aria-invalid={errorFor("assetCode") ? true : undefined}
-              aria-describedby={
+              cryptoAmount={amount}
+              fiatCurrency={fiatCurrency}
+              ariaInvalid={errorFor("assetCode") ? true : undefined}
+              ariaDescribedby={
                 errorFor("assetCode") ? "e-asset-error" : undefined
               }
-            >
-              {SETTLEMENT_ASSETS.map((a) => (
-                <option key={a.code} value={a.code}>
-                  {a.code}
-                  {a.code === "XLM"
-                    ? " (native)"
-                    : a.code === STABLE_ASSET.code
-                    ? " (stable)"
-                    : ""}
-                </option>
-              ))}
-            </Select>
+            />
             {errorFor("assetCode") && (
               <p id="e-asset-error" className="mt-1 text-xs text-flamingo" role="alert">
                 {errorFor("assetCode")}

@@ -8,9 +8,11 @@ import {
   History as HistoryIcon,
   Receipt,
   RefreshCcw,
+  SearchX,
   Zap,
 } from "lucide-react";
 import { PageHeader } from "@/components/app-shell";
+import { HistoryFilterBar } from "@/components/history/HistoryFilterBar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
@@ -21,6 +23,12 @@ import { Tabs } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListSkeleton } from "@/components/ui/skeleton";
 import { useInfiniteHistory, accumulateHistoryPages } from "@/lib/queries";
+import {
+  toHistoryRow,
+  matchesHistoryFilters,
+  hasActiveFilters,
+  type HistoryFilters,
+} from "@/lib/historyFilter";
 import { exportHistoryCsv, printReceipt } from "@/lib/export";
 import { Timestamp } from "@/components/timestamp";
 
@@ -42,6 +50,7 @@ export default function HistoryPage() {
   } = useInfiniteHistory();
 
   const [filter, setFilter] = useState<Filter>("all");
+  const [filters, setFilters] = useState<HistoryFilters>({ kind: "all" });
   const [currentPage, setCurrentPage] = useState(1);
 
   // Accumulate all loaded pages into a single deduplicated set sorted
@@ -52,8 +61,8 @@ export default function HistoryPage() {
   const settlements = accumulated.settlements;
   const hasData = expenses.length > 0 || settlements.length > 0;
 
-  // Filtered & unified items array for pagination
-  const filteredItems = useMemo(() => {
+  // Unified items array (per type tab) before free-text / currency filtering
+  const kindItems = useMemo(() => {
     if (filter === "expenses") {
       return expenses.map((e) => ({ type: "expense" as const, item: e, date: e.createdAt }));
     }
@@ -67,6 +76,17 @@ export default function HistoryPage() {
     return combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [filter, expenses, settlements]);
 
+  // Apply the search bar filters (keyword, currency, person, date range).
+  const filteredItems = useMemo(
+    () =>
+      kindItems.filter(({ type, item }) =>
+        matchesHistoryFilters(toHistoryRow({ type, ...item }), filters)
+      ),
+    [kindItems, filters]
+  );
+
+  const searching = hasActiveFilters(filters);
+
   const totalItems = filteredItems.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / HISTORY_PAGE_SIZE));
 
@@ -77,6 +97,7 @@ export default function HistoryPage() {
 
   function handleFilterChange(newFilter: Filter) {
     setFilter(newFilter);
+    setFilters((prev) => ({ ...prev, kind: newFilter }));
     setCurrentPage(1);
   }
 
@@ -125,6 +146,8 @@ export default function HistoryPage() {
         ]}
       />
 
+      {hasData && <HistoryFilterBar value={filters} onChange={setFilters} />}
+
       {isLoading ? (
         <ListSkeleton rows={5} />
       ) : isError ? (
@@ -146,6 +169,18 @@ export default function HistoryPage() {
         />
       ) : (
         <div className="space-y-4">
+          {searching && filteredItems.length === 0 ? (
+            <EmptyState
+              icon={<SearchX className="h-7 w-7" />}
+              title="No matches"
+              description="No transactions match your current filters. Try broadening the search or clearing the filters."
+              action={
+                <Button variant="outline" onClick={() => setFilters({ kind: "all" })}>
+                  Clear filters
+                </Button>
+              }
+            />
+          ) : (
           <div className="space-y-3">
             {currentPageItems.map(({ type, item }) => {
               if (type === "expense") {
@@ -208,6 +243,7 @@ export default function HistoryPage() {
               );
             })}
           </div>
+          )}
 
           <Pagination
             currentPage={currentPage}

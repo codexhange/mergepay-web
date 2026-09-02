@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
 import { useCreateExpense } from "@/lib/queries";
 import { api } from "@/lib/api";
 import { handleApiError } from "@/lib/errorHandler";
-import { SETTLEMENT_ASSETS, STABLE_ASSET } from "@/lib/constants";
+import { SETTLEMENT_ASSETS } from "@/lib/constants";
+import { AssetSelector } from "@/components/expenses/AssetSelector";
 import type { GroupMember, SplitType, ExpenseShareInput } from "@/lib/types";
 import {
   AMOUNT_DECIMAL_PLACES,

@@ -70,14 +70,18 @@ export const useAuth = create<AuthState>()(
     {
       name: SESSION_STORAGE_KEY,
       storage: createJSONStorage(() => {
-        if (typeof window === "undefined") {
+        const storage =
+          typeof window !== "undefined"
+            ? window.sessionStorage
+            : (globalThis as { sessionStorage?: Storage }).sessionStorage;
+        if (!storage) {
           return {
             getItem: () => null,
             setItem: () => {},
             removeItem: () => {},
           };
         }
-        return window.sessionStorage;
+        return storage;
       }),
       partialize: (state) => ({
         user: state.user,

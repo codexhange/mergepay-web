@@ -49,14 +49,16 @@ describe("ErrorBoundary", () => {
 
     expect(screen.getByText("Something went wrong")).toBeInTheDocument();
 
+    // Re-render with safe children first, then reset the boundary so the
+    // remounted subtree renders normally instead of throwing again.
     throwError = false;
-    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
-
     rerender(
       <ErrorBoundary>
         <Bomb shouldThrow={throwError} />
       </ErrorBoundary>
     );
+
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
 
     expect(screen.getByText("Everything is fine")).toBeInTheDocument();
   });

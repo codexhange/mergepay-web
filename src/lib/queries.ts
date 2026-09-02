@@ -7,7 +7,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { api, getInviteByCode } from "./api";
+import { api } from "./api";
 import { handleApiError } from "./errorHandler";
 import { useAuth } from "./auth-store";
 import type {
@@ -34,8 +34,12 @@ import {
   type TreasurySource,
 } from "./treasury";
 import { mergeHistoryPages, type AccumulatedHistory } from "./expenses";
-import type { Expense, LedgerEntry, Settlement, User } from "./types";
-import type { HistoryResponse, LedgerResponse } from "./types";
+import type { Expense, LedgerEntry, Settlement } from "./types";
+import type { HistoryResponse, LedgerResponse, AnchorSessionStatus } from "./types";
+import {
+  ANCHOR_POLL_MAX_PERSISTENT_FAILURES,
+  anchorPollInterval,
+} from "./anchor-state";
 import {
   createOptimisticExpenseEvent,
   calculateOptimisticActivityList,
@@ -53,7 +57,6 @@ export const qk = {
   treasury: (groupId: string) => ["groups", groupId, "treasury"] as const,
   treasuryHistory: (groupId: string) =>
     ["groups", groupId, "treasury", "history"] as const,
-  invite: (code: string) => ["invite", code] as const,
   anchors: ["anchors"] as const,
   anchorSessions: ["anchors", "sessions"] as const,
   history: ["history"] as const,
@@ -155,14 +158,14 @@ export function useInviteByCode(code: string | null) {
   });
 }
 
-export function useExpenses(groupId: string) {
+export function useExpenses(groupId?: string) {
   // Uses the global default staleTime (30s, see src/lib/queryClient.ts):
   // list data is shown from cache instantly and revalidated in the
   // background (stale-while-revalidate), while expense mutations still
   // force a refetch through `invalidateQueries`.
   return useQuery({
-    queryKey: qk.expenses(groupId),
-    queryFn: () => api.listExpenses(groupId),
+    queryKey: qk.expenses(groupId ?? "_"),
+    queryFn: () => api.listExpenses(groupId as string),
     staleTime: 30_000,
     enabled: useSessionEnabled() && Boolean(groupId),
   });
@@ -222,6 +225,25 @@ export function useLedger(groupId: string) {
   return useQuery({
     queryKey: qk.ledger(groupId),
     queryFn: () => api.getLedger(groupId),
+  });
+}
+
+/**
+ * Group-scoped settlement entries, derived from the group ledger.
+ *
+ * Keeps only the settlement entries of a group's ledger so callers can
+ * render or export just the settlements without re-shaping the feed.
+ */
+export function useSettlements(groupId?: string) {
+  return useQuery({
+    queryKey: qk.ledger(groupId ?? "_"),
+    queryFn: () => api.getLedger(groupId as string),
+    enabled: Boolean(groupId),
+    select: (data: LedgerResponse) => ({
+      settlements: data.entries
+        .filter((entry) => entry.type === "settlement")
+        .map((entry) => entry.settlement),
+    }),
   });
 }
 
@@ -322,6 +344,41 @@ export function useAnchorSessions() {
     queryFn: api.anchorSessions,
     refetchInterval: 15_000,
   });
+}
+
+export function useAnchorSession(sessionId: string | null) {
+  const failureCount = useRef(0);
+  const [pollingStalled, setPollingStalled] = useState(false);
+
+  const query = useQuery({
+    queryKey: ["anchors", "session", sessionId],
+    queryFn: () => api.anchorSession(sessionId as string),
+    enabled: Boolean(sessionId),
+    refetchInterval: (q) =>
+      anchorPollInterval({
+        state: {
+          data: q.state.data?.session as { status?: AnchorSessionStatus } | undefined,
+        },
+        failureCount: failureCount.current,
+      }),
+    refetchIntervalInBackground: false,
+    retry: false,
+    staleTime: 0,
+  });
+
+  useEffect(() => {
+    if (query.isError) {
+      failureCount.current += 1;
+      if (failureCount.current >= ANCHOR_POLL_MAX_PERSISTENT_FAILURES) {
+        setPollingStalled(true);
+      }
+    } else if (query.isSuccess) {
+      failureCount.current = 0;
+      setPollingStalled(false);
+    }
+  }, [query.isError, query.isSuccess, query.errorUpdatedAt, query.dataUpdatedAt]);
+
+  return { ...query, pollingStalled };
 }
 
 export function useInfiniteHistory(options: { limit?: number } = {}) {
@@ -463,7 +520,7 @@ export function invalidationFilters(target: InvalidationTarget): {
   return "queryKey" in target ? target : { queryKey: target };
 }
 
-export function useInvalidator() {
+function useInvalidator() {
   const qc = useQueryClient();
   return (targets: readonly InvalidationTarget[]) =>
     Promise.all(targets.map((t) => qc.invalidateQueries(invalidationFilters(t))));
@@ -596,23 +653,20 @@ export function useCreateExpense(groupId: string) {
 
   return useMutation({
     mutationFn: (data: CreateExpenseRequest) => api.createExpense(groupId, data),
-    // Optimistically update expense list, balances, and activity feed before the API responds
+    // Optimistically update group member balances and activity feed before the API responds
     onMutate: async (data: CreateExpenseRequest) => {
       const balanceKey = qk.balances(groupId);
       const activityKey = qk.activity(groupId);
-      const expensesKeyPrefix = qk.expenses(groupId);
 
       // Cancel any outgoing refetches so they don't overwrite our optimistic update
       await Promise.all([
         qc.cancelQueries({ queryKey: balanceKey }),
         qc.cancelQueries({ queryKey: activityKey }),
-        qc.cancelQueries({ queryKey: expensesKeyPrefix }),
       ]);
 
       // Save a snapshot of current query data for rollback on error
       const previousBalances = qc.getQueryData<BalancesResponse>(balanceKey);
       const previousActivity = qc.getQueryData<GroupActivityResponse>(activityKey);
-      const previousExpenses = qc.getQueriesData({ queryKey: expensesKeyPrefix });
 
       // Apply optimistic update only if previous balance cache exists
       if (previousBalances) {
@@ -640,72 +694,7 @@ export function useCreateExpense(groupId: string) {
         return calculateOptimisticActivityList(old, optEvent);
       });
 
-      // Optimistically prepend new expense to cached expense list queries
-      const optId = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      const payerUser: User = user ?? {
-        id: data.payerUserId || "",
-        displayName: "You",
-        avatarUrl: null,
-        stellarPublicKey: "",
-        createdAt: new Date().toISOString(),
-      };
-
-      const optExpense: Expense = {
-        id: optId,
-        groupId,
-        payerUserId: data.payerUserId || payerUser.id,
-        payer: payerUser,
-        title: data.title,
-        description: data.description ?? null,
-        amount: data.amount,
-        assetCode: data.assetCode,
-        assetIssuer: data.assetIssuer ?? null,
-        splitType: data.splitType,
-        memo: data.memo ?? null,
-        receiptUrl: data.receiptUrl ?? null,
-        createdAt: new Date().toISOString(),
-        shares: (data.shares ?? []).map((s, idx) => ({
-          id: `share-opt-${idx}`,
-          expenseId: optId,
-          userId: s.userId,
-          user: {
-            id: s.userId,
-            displayName: "Member",
-            avatarUrl: null,
-            stellarPublicKey: "",
-            createdAt: new Date().toISOString(),
-          },
-          shareAmount: s.amount ?? "0",
-          status: "pending",
-        })),
-        isOptimistic: true,
-        pending: true,
-      };
-
-      for (const [key, oldData] of previousExpenses) {
-        if (!oldData) continue;
-        if (typeof oldData === "object" && "pages" in oldData && Array.isArray((oldData as any).pages)) {
-          qc.setQueryData(key, (old: any) => {
-            if (!old || !old.pages || old.pages.length === 0) return old;
-            const firstPage = old.pages[0];
-            const updatedFirstPage = {
-              ...firstPage,
-              expenses: [optExpense, ...(firstPage.expenses || [])],
-            };
-            return {
-              ...old,
-              pages: [updatedFirstPage, ...old.pages.slice(1)],
-            };
-          });
-        } else if (typeof oldData === "object" && "expenses" in oldData && Array.isArray((oldData as any).expenses)) {
-          qc.setQueryData(key, (old: any) => ({
-            ...old,
-            expenses: [optExpense, ...(old.expenses || [])],
-          }));
-        }
-      }
-
-      return { previousBalances, previousActivity, previousExpenses };
+      return { previousBalances, previousActivity };
     },
     // On failure, revert back to saved snapshot and display error toast
     onError: (err, _variables, context) => {
@@ -715,12 +704,7 @@ export function useCreateExpense(groupId: string) {
       if (context?.previousActivity) {
         qc.setQueryData(qk.activity(groupId), context.previousActivity);
       }
-      if (context?.previousExpenses) {
-        for (const [key, oldData] of context.previousExpenses) {
-          qc.setQueryData(key, oldData);
-        }
-      }
-      handleApiError(err, "Failed to create expense. Cache reverted.");
+      handleApiError(err, "Failed to create expense. Balances and activity reverted.");
     },
     // Refetch canonical data on settlement (success or error) so the list,
     // balances, ledger, and activity feed reflect the server's view.

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
-import { cn } from "ü/../lib/utils" (this is corrected below)
+import { cn } from "@/lib/utils";
 import { Button } from "./button";
 
 export interface DialogProps {
@@ -11,6 +11,8 @@ export interface DialogProps {
   description?: string;
   children: React.ReactNode;
   className?: string;
+  /** When false, backdrop clicks, Escape and the close button are disabled. */
+  dismissible?: boolean;
 }
 
 export function Dialog({
@@ -20,6 +22,7 @@ export function Dialog({
   description,
   children,
   className,
+  dismissible = true,
 }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
@@ -57,12 +60,11 @@ export function Dialog({
     if (!open) return;
 
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && dismissible) {
         e.stopPropagation();
         onClose();
         return;
       }
-    }, 50);
 
       if (e.key === "Tab" && dialogRef.current) {
         const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
@@ -91,7 +93,7 @@ export function Dialog({
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open, onClose]);
+  }, [open, onClose, dismissible]);
 
   if (!open) return null;
 
@@ -100,7 +102,7 @@ export function Dialog({
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-ink/60 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
+        onClick={dismissible ? onClose : undefined}
         aria-hidden="true"
       />
 
@@ -121,15 +123,17 @@ export function Dialog({
           <h2 id={titleId} className="font-display text-lg uppercase tracking-wider">
             {title}
           </h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="h-8 w-8 p-0 rounded-lg"
-          >
-            <X className="h-4 w-4" />
-          </Button>
+          {dismissible && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+              aria-label={`Close ${title}`}
+              className="h-8 w-8 p-0 rounded-lg"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
         </div>
 
         {description && (

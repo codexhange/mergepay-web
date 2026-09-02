@@ -100,6 +100,12 @@ export class ApiTimeoutError extends Error {
 }
 
 let expiryHandled = false;
+let onSessionExpired: (() => void) | null = null;
+
+/** Register the browser-session recovery hook without coupling this module to React. */
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  onSessionExpired = handler;
+}
 
 export function isSessionExpired(): boolean {
   return expiryHandled;
@@ -166,7 +172,9 @@ async function request<T>(
 
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, { ...options, headers, body });
+    // Browser calls go through the same-origin Next.js API proxy
+    // (src/app/api/*), which forwards to the backend via API_URL.
+    res = await fetch(`/api${path}`, { ...options, headers, body });
   } catch (err) {
     // fetch only rejects on network-level failures (offline, DNS, CORS)
     // or intentional aborts. Normalize and report centrally — every call
@@ -177,6 +185,7 @@ async function request<T>(
   if (res.status === 401 && token && !expiryHandled) {
     expiryHandled = true;
     useAuth.getState().clear();
+    onSessionExpired?.();
   }
 
   if (!res.ok) {
@@ -328,7 +337,7 @@ export const api = {
 
     try {
       const res = await fetch(
-        `${API_URL}/groups/${groupId}/expenses`,
+        `/api/groups/${groupId}/expenses`,
         {
           method: "POST",
           headers,
@@ -543,6 +552,10 @@ export const api = {
     request<AnchorSessionResponse>(`/anchors/sessions/${sessionId}/complete`, {
       method: "POST",
       json: data,
+      schema: AnchorSessionResponseSchema as unknown as z.ZodType<AnchorSessionResponse>,
+    }),
+  anchorSession: (sessionId: string) =>
+    request<AnchorSessionResponse>(`/anchors/sessions/${sessionId}`, {
       schema: AnchorSessionResponseSchema as unknown as z.ZodType<AnchorSessionResponse>,
     }),
   anchorSessions: () =>

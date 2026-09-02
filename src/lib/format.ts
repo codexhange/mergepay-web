@@ -1,6 +1,8 @@
 import {
+  AMOUNT_UNAVAILABLE,
   formatAssetAmount,
   formatAssetAmountText,
+  normalizeAssetCode,
   type FormatAmountOptions,
 } from "./currency";
 import {
@@ -52,7 +54,12 @@ export function formatCurrencyAmount(
   assetCode: string | null | undefined,
   options?: FormatAmountOptions
 ): string {
-  return formatAssetAmountText(amount, assetCode, options);
+  const formatted = formatAssetAmount(amount, assetCode, options);
+  if (!formatted.valid) {
+    const asset = normalizeAssetCode(assetCode);
+    return asset ? `${AMOUNT_UNAVAILABLE} ${asset}` : AMOUNT_UNAVAILABLE;
+  }
+  return formatted.text;
 }
 
 /**

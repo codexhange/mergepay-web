@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api } from "@lib/api";
+import { api } from "@/lib/api";
 import { qk, useInvalidator, expenseCacheKeys } from "@/lib/queries";
 import { handleApiError } from "@/lib/errorHandler";
 import type {
@@ -81,7 +81,10 @@ export function useSettleBalanceMutation(groupId: string) {
           qc.setQueryData(queryKey, queryData);
         }
       }
-      handleApiError(err, "Failed to execute settlement");
+      // Log the underlying failure for diagnosis (no key material or
+      // private payloads are included) and tell the user what happened.
+      console.error("[mergepay] settlement failed, balances rolled back:", err);
+      toast.error("Settlement failed. Balances rolled back.");
     },
     onSuccess: () => {
       toast.success("Settlement executed successfully");

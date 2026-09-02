@@ -171,7 +171,7 @@ export function IdleSessionWarningModal() {
  * state this guard exists to avoid.
  */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { token, hydrated, restoring, logout } = useAuth();
+  const { token, restoring, logout } = useAuth();
   const router = useRouter();
   const expired = isSessionExpired();
 
@@ -186,10 +186,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    if (hydrated && !restoring && !token) router.replace("/login");
-  }, [hydrated, restoring, token, router]);
+    if (!restoring && !token) router.replace("/login");
+  }, [restoring, token, router]);
 
-  if (!hydrated || restoring || !token) {
+  if (restoring || !token) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-paper">
         <div className="animate-wiggle">

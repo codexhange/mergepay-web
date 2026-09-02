@@ -1,16 +1,54 @@
 import { test, expect } from "@playwright/test";
 
+const MOCK_PUBLIC_KEY = "GAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXDV";
+const MOCK_NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
+
 test.beforeEach(async ({ page }) => {
-  // Mock Freighter wallet injection and API responses
-  await page.addInitScript(() => {
-    (window as any).freighter = {
-      isConnected: async () => true,
-      requestAccess: async () => "GAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXDV",
-      getAddress: async () => "GAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXDV",
-      getNetwork: async () => "TESTNET",
-      signTransaction: async (xdr: string) => xdr,
-    };
-  });
+  // Emulate the Freighter extension's postMessage protocol used by
+  // @stellar/freighter-api v4 (window.freighter methods are not called
+  // directly; every call is a FREIGHTER_EXTERNAL_MSG_REQUEST exchange).
+  await page.addInitScript(
+    ({ publicKey, networkPassphrase }) => {
+      window.addEventListener("message", (event) => {
+        const data = event.data as {
+          source?: string;
+          messageId?: string;
+          type?: string;
+          transactionXdr?: string;
+        };
+        if (!data || data.source !== "FREIGHTER_EXTERNAL_MSG_REQUEST") return;
+        const { messageId, type } = data;
+        let payload: Record<string, unknown> = {};
+        switch (type) {
+          case "REQUEST_CONNECTION_STATUS":
+            payload = { isConnected: true };
+            break;
+          case "REQUEST_ACCESS":
+          case "REQUEST_PUBLIC_KEY":
+            payload = { publicKey };
+            break;
+          case "REQUEST_NETWORK":
+            payload = { network: "TESTNET" };
+            break;
+          case "REQUEST_NETWORK_DETAILS":
+            payload = { network: "TESTNET", networkPassphrase };
+            break;
+          case "SUBMIT_TRANSACTION":
+            payload = { signedTransaction: String(data.transactionXdr ?? "") };
+            break;
+          default:
+            return;
+        }
+        // The library matches responses on `messagedId` (sic) echoing the
+        // request's `messageId`, with the response fields at top level.
+        window.postMessage(
+          { source: "FREIGHTER_EXTERNAL_MSG_RESPONSE", messagedId: messageId, ...payload },
+          "*"
+        );
+      });
+    },
+    { publicKey: MOCK_PUBLIC_KEY, networkPassphrase: MOCK_NETWORK_PASSPHRASE }
+  );
 
   // Mock API endpoints for authentication and user data
   await page.route("**/api/auth/challenge", async (route) => {

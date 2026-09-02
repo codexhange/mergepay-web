@@ -36,7 +36,7 @@ async function fetchExchangeRates(): Promise<ExchangeRates> {
   }
 
   const xlmToUsdc = xlmUsd / usdcUsd;
-  const usdcToXlm = usdcToUsdc > 0 ? 1 / xlmToUsdc : 8.3333333;
+  const usdcToXlm = usdcUsd > 0 ? 1 / xlmToUsdc : 8.3333333;
 
   return {
     rates: {

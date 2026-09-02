@@ -1,9 +1,9 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeAll, afterAll } from "vitest";
 import { WalletErrorBoundary } from "./WalletErrorBoundary";
 import { WalletNotInstalledError, WalletLockedError, UserRejectedError } from "@/lib/stellar";
 
-function Bomb({ error }: { error: Error }) {
+function Bomb({ error }: { error: Error }): never {
   throw error;
 }
 

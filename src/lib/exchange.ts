@@ -45,7 +45,7 @@ export function convertAmount(
   fromAsset: string,
   toAsset: string,
   rates: Record<string, number> | ExchangeRates
-):/\* null | string \*/ string | null {
+): /* null | string */ string | null {
   const normalizedFrom = normalizeAssetCode(fromAsset);
   const normalizedTo = normalizeAssetCode(toAsset);
 
@@ -69,34 +69,39 @@ export function convertAmount(
     return null;
   }
 
-  const rateMap = "rates" in rates ? rates.rates : rates;
-  const directKey = getPairKey(normalizedFrom, normalizedTo);
-  let rate = rateMap[directKey];
+  const rateMap =
+    typeof rates === "object" && rates !== null && "rates" in rates
+      ? (rates as ExchangeRates).rates
+      : (rates as Record<string, number>);
 
-  if (typeof rate !== "number" || isNaN(rate)) {
-    const inverseKey = getPairKey(normalizedTo, normalizedFrom);
-    const inverseRate = rateMap[inverseKey];
-    if (typeof inverseRate === "number" && inverseRate > 0) {
-      rate = 1 / inverseRate;
+  // parsedAmount is in stroops (10^-7); scale to units for the rate math.
+  const sourceValueFloat = Number(parsedAmount) / 10_000_000;
+
+  // Canonical rates are stored "to-per-from" (e.g. "XLM-USDC": 0.12 USDC per
+  // XLM). For a from→to conversion prefer the inverse pair and divide (12 USDC
+  // / 0.12 = 100 XLM exactly); fall back to the direct pair by multiplying
+  // when only it is available.
+  const inverseKey = getPairKey(normalizedTo, normalizedFrom);
+  const inverseRate = rateMap[inverseKey];
+  let targetValueFloat: number;
+  if (typeof inverseRate === "number" && inverseRate > 0 && isFinite(inverseRate)) {
+    targetValueFloat = sourceValueFloat / inverseRate;
+  } else {
+    const directKey = getPairKey(normalizedFrom, normalizedTo);
+    const directRate = rateMap[directKey];
+    if (typeof directRate === "number" && directRate > 0 && isFinite(directRate)) {
+      targetValueFloat = sourceValueFloat * directRate;
     } else {
       return null;
     }
   }
 
-  if (rate <= 0 || !isFinite(rate)) {
-    return null;
-  }
-
   try {
-    // rate is factor to multiply `from` to get `to`. E.g., 1 XLM * 0.12 USDC/XLM = 0.12 USDC
-    // Using floating point for rate scaling combined with BigInt stroops conversion:
-    // parsedAmount is in stroops (10^-7). rate is to/from.
-    const sourceValueFloat = Number(parsedAmount) / 10_000_000;
-    const targetValueFloat = sourceValueFloat * rate;
     if (isNaN(targetValueFloat) || targetValueFloat < 0) return null;
-    return toStroops(targetValueFloat).toString() === "0" && parsedAmount > 0n && rate > 0
+    const converted = toStroops(targetValueFloat);
+    return converted.toString() === "0" && parsedAmount > 0n
       ? fromStroops(1n) // guard against underflow for non-zero min amounts
-      : fromStroops(toStroops(targetValueFloat));
+      : fromStroops(converted);
   } catch {
     return null;
   }

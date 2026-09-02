@@ -31,7 +31,7 @@ const attemptedCodes = new Set<string>();
 export default function JoinByCodePage() {
   const params = useParams<{ code: string | string[] }>();
   const router = useRouter();
-  const { token, hydrated } = useAuth();
+  const { token, restoring } = useAuth();
   const join = useJoinGroup();
   const started = useRef(false);
   const [failure, setFailure] = useState<InviteRecovery | null>(null);
@@ -56,14 +56,14 @@ export default function JoinByCodePage() {
 
   // Redirect unauthenticated users to login, parking the code for return.
   useEffect(() => {
-    if (!parsed.ok || !hydrated) return;
+    if (!parsed.ok || restoring) return;
     if (!token) {
       try {
         sessionStorage.setItem("mergepay.pendingInvite", parsed.code);
       } catch {}
       router.replace("/login");
     }
-  }, [parsed, hydrated, token, router]);
+  }, [parsed, restoring, token, router]);
 
   // Handle invite fetch errors (expired, revoked, not found, etc.)
   useEffect(() => {
@@ -210,7 +210,7 @@ export default function JoinByCodePage() {
               <Button
                 onClick={() => void handleJoin()}
                 loading={joining}
-                disabled={joining || !hydrated}
+                disabled={joining || restoring}
               >
                 Join group
               </Button>

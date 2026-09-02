@@ -327,7 +327,10 @@ export async function isFreighterAvailable(): Promise<boolean> {
   try {
     const res = await isConnected();
     if (typeof res === "boolean") return res;
-    if (isObject(res) && typeof res.isConnected === "boolean") return res.isConnected;
+    // freighter-api v4: when window.freighter is present (extension or test
+    // mock) isConnected resolves to { isConnected: <object> } — truthy means
+    // the wallet is reachable; the postMessage path reports a real boolean.
+    if (isObject(res) && res.isConnected) return true;
     return false;
   } catch {
     return false;
@@ -597,6 +600,14 @@ export async function signAndConfirmSettlement(
   xdr: string,
   networkPassphrase: string
 ) {
+  // Validate the network passphrase matches our configuration before
+  // attempting to sign. A mismatch means the API built the envelope
+  // for a different network — signing would fail on submission.
+  if (networkPassphrase !== NETWORK_PASSPHRASE) {
+    throw new NetworkMismatchError(
+      "The transaction was built for a different Stellar network."
+    );
+  }
   const signedXdr = await signXdr(xdr, networkPassphrase);
   return api.confirmSettlement(settlementId, { signedXdr });
 }

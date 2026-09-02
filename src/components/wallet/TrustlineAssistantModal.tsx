@@ -147,7 +147,7 @@ export function TrustlineAssistantModal({
 
                 <div>
                   {hasTrustline ? (
-                    <Badge tone="mint" className="gap-1 px-3 py-1 font-bold">
+                    <Badge tone="lime" className="gap-1 px-3 py-1 font-bold">
                       <CheckCircle2 className="h-3.5 w-3.5" /> Active
                     </Badge>
                   ) : (

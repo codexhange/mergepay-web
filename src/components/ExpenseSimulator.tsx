@@ -2,10 +2,10 @@
 
 import { useState, useMemo } from "react";
 import { z } from "zod";
-import { Card, CardHeader, CardTitle, CardContent } from "src/components/ui/card";
-import { Button } from "src/components/ui/button";
-import { Input, Label, FieldHint } from "src/components/ui/input";
-import { Badge } from "src/components/ui/badge";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input, Label, FieldHint } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Calculator, Users, DollarSign, AlertCircle } from "lucide-react";
 
 // Zod schema matching src/lib/types.ts and backend split validations
@@ -124,14 +124,14 @@ export function ExpenseSimulator({
   }, [totalAmount, splitType, participants]);
 
   function toggleParticipant(id: string) {
-    setParticipants((prev)
-      => prev.map((p) => (p.id === id ? { ...p, included: !p.included } : p))
+    setParticipants((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, included: !p.included } : p))
     );
   }
 
   function updateCustomAmount(id: string, amount: string) {
-    setParticipants((prev)
-      => prev.map((p) => (p.id === id ? { ...p, customAmount: amount } : p))
+    setParticipants((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, customAmount: amount } : p))
     );
   }
 

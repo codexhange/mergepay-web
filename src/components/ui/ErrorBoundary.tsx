@@ -33,7 +33,8 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("ErrorBoundary caught an error:", error, errorInfo);
+    console.error("[ErrorBoundary] caught an error:", error);
+    console.error("[ErrorBoundary] component stack:", errorInfo.componentStack);
     this.props.onError?.(error, errorInfo);
   }
 
@@ -75,7 +76,7 @@ export class ErrorBoundary extends Component<Props, State> {
             )}
 
             <div className="flex justify-end gap-2 pt-2">
-              <Button onClick={this.handleReset} variant="default">
+              <Button onClick={this.handleReset} variant="primary">
                 <RefreshCw className="h-4 w-4 mr-1" />
                 Try Again
               </Button>

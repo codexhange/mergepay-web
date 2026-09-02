@@ -36,7 +36,11 @@ export function useSessionRestore() {
           return;
         }
 
-        const currentAddress = await getAddress();
+        const addressResult = await getAddress();
+        const currentAddress =
+          typeof addressResult === "string"
+            ? addressResult
+            : addressResult?.address;
         if (!currentAddress) {
           toast.error("No Freighter account granted. Please reconnect.");
           forgetWallet();
@@ -62,4 +66,6 @@ export function useSessionRestore() {
 
     void restore();
   }, [restoreStatus, forgetWallet, setRestoreStatus]);
+
+  return { restoreSession: () => setRestoreStatus("idle") };
 }

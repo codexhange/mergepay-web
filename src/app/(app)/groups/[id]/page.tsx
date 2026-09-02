@@ -1,20 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useGroup, useExpenses, useBalances, useSettlements } from "@/lib/queries";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/button";
-import { Plus, Users, Receipt, ArrowLeft } from "lucide-react";
+import { Plus, Users, Receipt, ArrowLeft, Search } from "lucide-react";
 import Link from "next/link";
 import { AddExpenseDialog } from "@/components/expenses/add-expense-dialog";
-import { SettleDialog } from "@/components/settle/settle-dialog";
 import { InviteModal } from "@/components/groups/InviteModal";
 import { BalancesPanel } from "@/components/balances/balances-panel";
 import { ExpenseCard } from "@/components/expenses/expense-card";
 import { GroupActivityFeed } from "@/components/groups/GroupActivityFeed";
 import { GroupBudgetTracker } from "@/components/GroupBudgetTracker";
 import { ExportGroupStatementButton } from "@/components/ExportGroupStatementButton";
+import { ExpenseListFilters, type ExpenseFilterState } from "@/components/expenses/expense-list-filters";
 import type { Expense, GroupMember } from "@/lib/types";
 
 export default function GroupDetailPage() {
@@ -28,14 +29,39 @@ export default function GroupDetailPage() {
 
   const [addExpenseOpen, setAddExpenseOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [filters, setFilters] = useState<ExpenseFilterState>({ search: "", payer: "", status: "", asset: "", pageSize: 10 });
+  const [page, setPage] = useState(1);
 
   const group = groupQuery.data?.group;
   const expenses: Expense[] = expensesQuery.data?.expenses ?? [];
   const balances = balancesQuery.data?.balances ?? [];
   const settlements = settlementsQuery.data?.settlements ?? [];
-  const members: GroupMember[] = group?.members ?? [];
+  const members: GroupMember[] = groupQuery.data?.members ?? [];
   const currentUserId = "user-1"; // Fallback or session user ID
   const isAdmin = true;
+
+  const onFilterChange = useCallback((next: ExpenseFilterState) => {
+    setFilters(next);
+    setPage(1);
+  }, []);
+
+  const filteredExpenses = useMemo(() => {
+    const needle = filters.search.trim().toLowerCase();
+    return expenses.filter((expense) => {
+      const matchesSearch =
+        !needle ||
+        expense.title.toLowerCase().includes(needle) ||
+        expense.payer.displayName.toLowerCase().includes(needle);
+      const matchesPayer = !filters.payer || expense.payerUserId === filters.payer;
+      const matchesAsset = !filters.asset || expense.assetCode === filters.asset;
+      const settled = expense.shares.length > 0 && expense.shares.every((share) => share.status === "settled");
+      const matchesStatus = !filters.status || (filters.status === "settled" ? settled : !settled);
+      return matchesSearch && matchesPayer && matchesAsset && matchesStatus;
+    });
+  }, [expenses, filters]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredExpenses.length / filters.pageSize));
+  const visibleExpenses = filteredExpenses.slice((page - 1) * filters.pageSize, page * filters.pageSize);
 
   return (
     <ErrorBoundary onReset={() => {
@@ -86,8 +112,11 @@ export default function GroupDetailPage() {
             <ErrorBoundary>
               <div className="space-y-4">
                 <h2 className="font-display text-sm uppercase tracking-widest text-ink/60">
-                  Expenses ({expenses.length})
-                </h1>
+                  Expenses ({filteredExpenses.length}{filteredExpenses.length !== expenses.length ? ` of ${expenses.length}` : ""})
+                </h2>
+
+                <ExpenseListFilters expenses={expenses} members={members} onChange={onFilterChange} />
+
                 {expensesQuery.isLoading && <p>Loading expenses...</p>}
                 {expensesQuery.isError && (
                   <div className="rounded-xl border-2 border-ink bg-flamingo-pale p-4">
@@ -97,7 +126,14 @@ export default function GroupDetailPage() {
                     </Button>
                   </div>
                 )}
-                {expenses.map((expense: Expense) => (
+                {!expensesQuery.isLoading && !expensesQuery.isError && visibleExpenses.length === 0 && (
+                  <EmptyState
+                    icon={<Search className="h-7 w-7" />}
+                    title="No expenses found"
+                    description={filteredExpenses.length > 0 ? "No expenses match these filters on this page." : "No expenses recorded yet."}
+                  />
+                )}
+                {visibleExpenses.map((expense: Expense) => (
                   <ErrorBoundary key={expense.id}>
                     <ExpenseCard
                       expense={expense}
@@ -107,6 +143,13 @@ export default function GroupDetailPage() {
                     />
                   </ErrorBoundary>
                 ))}
+                {pageCount > 1 && (
+                  <div className="flex items-center justify-center gap-3">
+                    <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Previous</Button>
+                    <span className="text-xs font-bold">Page {page} of {pageCount}</span>
+                    <Button size="sm" variant="outline" disabled={page === pageCount} onClick={() => setPage((current) => current + 1)}>Next</Button>
+                  </div>
+                )}
               </div>
             </ErrorBoundary>
           </div>
@@ -115,8 +158,6 @@ export default function GroupDetailPage() {
             <ErrorBoundary>
               <BalancesPanel
                 groupId={groupId}
-                balances={balances}
-                members={members}
                 currentUserId={currentUserId}
               />
             </ErrorBoundary>
@@ -132,6 +173,7 @@ export default function GroupDetailPage() {
           onClose={() => setAddExpenseOpen(false)}
           groupId={groupId}
           members={members}
+          currentUserId={currentUserId}
         />
 
         <InviteModal

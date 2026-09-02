@@ -9,6 +9,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Money } from "@/components/amount";
 import { AssetBadge } from "@/components/asset-badge";
 import { TxLink } from "@/components/tx-link";
+import { SettlementConfirmation } from "@/components/settle/settlement-confirmation";
 import { api, ApiRequestError } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
 import { connectWallet, signXdr, WalletError, WalletErrorCode, NotInstalledMessage } from "@/lib/stellar";

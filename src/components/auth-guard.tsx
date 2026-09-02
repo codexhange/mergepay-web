@@ -10,6 +10,7 @@ import { SessionExpiryDialog } from "./session-expiry-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useAuth as useAuthStore } from "@/lib/auth-store";
+import { useTokenExpiry } from "@/hooks/useTokenExpiry";
 import { api } from "@/lib/api";
 
 const IDLE_TIMEOUT_MS = 13 * 60 * 1000;
@@ -170,15 +171,25 @@ export function IdleSessionWarningModal() {
  * state this guard exists to avoid.
  */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { token, hydrated, restoring } = useAuth();
+  const { token, restoring, logout } = useAuth();
   const router = useRouter();
   const expired = isSessionExpired();
 
-  useEffect(() => {
-    if (hydrated && !restoring && !token) router.replace("/login");
-  }, [hydrated, restoring, token, router]);
+  // Proactive, `exp`-claim-driven session timeout (#393): sign out right as
+  // the token expires even if no network call surfaces a 401. Defined with
+  // `logout` as a stable reference so the expiry timer never self-reschedules
+  // on unrelated re-renders.
+  useTokenExpiry({
+    onExpire: () => {
+      void logout().then(() => router.replace("/login"));
+    },
+  });
 
-  if (!hydrated || restoring || !token) {
+  useEffect(() => {
+    if (!restoring && !token) router.replace("/login");
+  }, [restoring, token, router]);
+
+  if (restoring || !token) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-paper">
         <div className="animate-wiggle">
